@@ -12,6 +12,8 @@ async def main(page: ft.Page):
     gas_data = ft.Text("0.0",)
     status_bar = ft.Text(dt.now().strftime("%d/%m/%y %H:%M:%S"))
     conn_established = False
+    chat_messages = []
+    chat_data = ft.Text('Empty')
 
     async def receber_dados():
         uri = f'ws://192.168.1.140:8000/ws'
@@ -23,6 +25,9 @@ async def main(page: ft.Page):
                     exchange_data.value = mensagem.split(": ")[1]
                 if 'Combustível' in mensagem:
                     gas_data.value = mensagem.split(": ")[1]
+                if 'Chat' in mensagem:
+                    chat_messages.append(mensagem.split(': ')[1])
+                    chat_data.value = chat_messages
                 
                 page.update()
 
@@ -72,6 +77,7 @@ async def main(page: ft.Page):
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             ),
+            chat_data
         ],
         alignment=ft.MainAxisAlignment.CENTER,
     )
