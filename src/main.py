@@ -33,7 +33,13 @@ async def main(page: ft.Page):
     cost_data = ft.Text("0.0",)
     gas_data = ft.Text("0.0",)
     conn_established = False
-    chat_messages = ft.Column(scroll=ft.ScrollMode.ALWAYS, height=200, width=page.width)
+    # chat_messages = ft.Column(scroll=ft.ScrollMode.ALWAYS, height=200, width=page.width)
+    chat_ref = ft.Ref[ft.Column]()
+    chat_container = ft.Container(
+        content=ft.Column(ref=chat_ref, scroll=ft.ScrollMode.ALWAYS),
+        height=200,
+        width=page.width,
+    )
 
     async def receber_dados():
         uri = f'ws://192.168.1.123:8000/ws'
@@ -49,29 +55,34 @@ async def main(page: ft.Page):
                     cost_data.value = mensagem.split(": ")[1]
                 if 'Chat' in mensagem:
                     msg = mensagem.split(': ')[1]
-                    msg_txt = ft.Text(msg, expand=True)
-                    chat_messages.controls.append(msg_txt)
-                    chat_messages.scroll_to(offset=-1, duration=1000)
+                    # msg_txt = ft.Text(msg, expand=True)
+                    # chat_messages.controls.append(msg_txt)
+                    # chat_messages.scroll_to(offset=-1, duration=1000)
+                    chat_ref.current.controls.append(ft.Text(msg))
+                    chat_ref.current.update()
                 
                 page.update()
 
-    @error_handler_decorator
+    # @error_handler_decorator
     def request_combustivel(e):
-        response = requests.get('http://192.168.1.123:8000/get-combustivel')
-        values = response.json().get('mensagem')
-        gas_data.value = str(values).split(": ")[1]
+        response = requests.get('http://192.168.1.123:8000/get-combustivel/')
+        print(response)
+        price = response.json().get('price')
+        gas_data.value = str(f'{price}')
         page.update()
 
-    @error_handler_decorator
+    # @error_handler_decorator
     def request_cambio(e):
-        response = requests.get('http://192.168.1.123:8000/get-cambio')
-        values = response.json().get('mensagem')
-        exchange_data.value = str(values).split(": ")[1]
+        response = requests.get('http://192.168.1.123:8000/get-cambio/')
+        print(response)
+        buy = response.json().get('buy')
+        sell = response.json().get('sell')
+        exchange_data.value = str(f'{buy}/{sell}')
         page.update()
 
-    @error_handler_decorator
+    # @error_handler_decorator
     def request_custo(e):
-        response = requests.get('http://192.168.1.123:8000/get-custo')
+        response = requests.get('http://192.168.1.123:8000/get-custo/')
         values = response.json().get('mensagem')
         cost_data.value = str(values).split(": ")[1]
         page.update()
@@ -80,10 +91,12 @@ async def main(page: ft.Page):
         URL = f'http://192.168.1.123:8000/atualizar-chat/{msg}'
         response = requests.post(url=URL)
 
-    def login(e,):
-        print('login')
-        loginView.visible = False
-        view.visible = True
+    def login(e):
+        # loginView.visible = False
+        # view.visible = True
+        page.clean()
+        page.add(view)
+        page.run_task(receber_dados)
         page.update()
 
     # Login Section
@@ -152,14 +165,16 @@ async def main(page: ft.Page):
             alignment=ft.MainAxisAlignment.CENTER,
             ),
             ChatCustomInput(text='...', on_send=enviar),
-            chat_messages,
+            # chat_messages,
+            chat_container,
         ],
         alignment=ft.MainAxisAlignment.CENTER,
-        visible=False
+        # visible=False
     )
 
-    page.add(loginView, view)
-    page.run_task(receber_dados)
+    # page.add(loginView, view)
+    page.add(loginView)
+    # page.run_task(receber_dados)
 
 
 ft.app(main)
