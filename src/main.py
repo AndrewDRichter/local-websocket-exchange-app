@@ -36,7 +36,6 @@ async def main(page: ft.Page):
     username = ft.TextField(hint_text='usuario...')
     password = ft.TextField(password=True)
     conn_established = False
-    # chat_messages = ft.Column(scroll=ft.ScrollMode.ALWAYS, height=200, width=page.width)
     chat_ref = ft.Ref[ft.Column]()
     chat_container = ft.Container(
         content=ft.Column(ref=chat_ref, scroll=ft.ScrollMode.ALWAYS),
@@ -70,18 +69,21 @@ async def main(page: ft.Page):
                 page.update()
 
     # @error_handler_decorator
-    def request_combustivel(e):
-        response = requests.get('http://192.168.1.101:8000/get-gas-price/')
+    def request_gas(e):
+        headers = {
+            'Authorization': f'Bearer {page.client_storage.get('session')}'
+        }
+        response = requests.get('http://192.168.1.101:8000/gas-price/', headers=headers)
         price = response.json().get('price')
         gas_data.value = str(f'{price}')
         page.update()
 
     # @error_handler_decorator
-    def request_cambio(e):
+    def request_exchange(e):
         headers = {
             'Authorization': f'Bearer {page.client_storage.get('session')}'
         }
-        response = requests.get('http://192.168.1.101:8000/get-exchange-values/', headers=headers)
+        response = requests.get('http://192.168.1.101:8000/exchange-values/', headers=headers)
         print(response.json())
         # buy = response.json().get('buy')
         # sell = response.json().get('sell')
@@ -89,8 +91,12 @@ async def main(page: ft.Page):
         page.update()
 
     # @error_handler_decorator
-    def request_custo(e):
-        response = requests.get('http://192.168.1.101:8000/get-soybean-cost/')
+    def request_cost(e):
+        print(page.client_storage.get('session'))
+        headers = {
+            'Authorization': f'Bearer {page.client_storage.get('session')}'
+        }
+        response = requests.get('http://192.168.1.101:8000/soybean-cost/', headers=headers)
         print(response.json())
         cost = response.json().get('cost')
         ref_month = response.json().get('ref_month')
@@ -110,10 +116,18 @@ async def main(page: ft.Page):
             "username": username.value,
             "password": password.value
         }
-        response = requests.post('http://192.168.1.101:8000/signin/', data=json.dumps(data))
-        token = response.json().get('token', None)
-        if token is None:
-            raise Exception('Erro ao fazer login')
+        try:
+            response = requests.post('http://192.168.1.101:8000/signin', data=json.dumps(data))
+            # token = response.json().get('token', None)
+            print(f'response : -->> {response}')
+            token = response.json()
+            print(f'status code : -->> {response.status_code}')
+            print(f'token : -->> {token}')
+            if response.status_code == 401:
+                return False
+        except Exception as e:
+            print(e)
+            return False
         page.clean()
         page.add(view)
         page.run_task(receber_dados)
@@ -143,9 +157,9 @@ async def main(page: ft.Page):
     view = ft.Column([
             ft.Row([
                     ft.Column([
-                        ft.ElevatedButton(text="Câmbio", icon=ft.Icons.ATTACH_MONEY_SHARP, on_click=request_cambio),
+                        ft.ElevatedButton(text="Cambio", icon=ft.Icons.ATTACH_MONEY_SHARP, on_click=request_exchange),
                         ft.Row([
-                            ft.Text("Câmbio: "),
+                            ft.Text("Cambio: "),
                             exchange_data,
                         ])
                     ],
@@ -157,9 +171,9 @@ async def main(page: ft.Page):
             ),
             ft.Row([
                 ft.Column([
-                        ft.ElevatedButton(text="Combustível", icon=ft.Icons.LOCAL_GAS_STATION_SHARP, on_click=request_combustivel),
+                        ft.ElevatedButton(text="Combustible", icon=ft.Icons.LOCAL_GAS_STATION_SHARP, on_click=request_gas),
                         ft.Row([
-                            ft.Text("Combustível: "),
+                            ft.Text("Combustible: "),
                             gas_data,
                         ]),
                     ],
@@ -172,9 +186,9 @@ async def main(page: ft.Page):
             ),
             ft.Row([
                 ft.Column([
-                        ft.ElevatedButton(text="Custo", icon=ft.Icons.TRENDING_UP, on_click=request_custo),
+                        ft.ElevatedButton(text="Costo", icon=ft.Icons.TRENDING_UP, on_click=request_cost),
                         ft.Row([
-                            ft.Text("Custo: "),
+                            ft.Text("Costo: "),
                             cost_data,
                         ]),
                     ],
