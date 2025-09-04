@@ -1,8 +1,11 @@
 import json
 import flet as ft
 import requests
+import time
+from requests.exceptions import HTTPError
 from datetime import datetime as dt
 import websockets
+from websockets.exceptions import ConnectionClosedError
 from utils.error_handler_decorator import error_handler_decorator
 from utils.months import MONTHS
 
@@ -35,6 +38,7 @@ async def main(page: ft.Page):
     gas_data = ft.Text("0.0",)
     username = ft.TextField(hint_text='usuario...')
     password = ft.TextField(password=True)
+    auth_token = None
     conn_established = False
     chat_ref = ft.Ref[ft.Column]()
     chat_container = ft.Container(
@@ -43,96 +47,104 @@ async def main(page: ft.Page):
         width=page.width,
     )
 
+    async def get_token():
+        return await page.client_storage.get("session")
+
     async def receber_dados():
         uri = f'ws://192.168.1.101:8000/ws'
-        async with websockets.connect(uri) as websocket:
-            while True:
-                mensagem = await websocket.recv()
-                print(mensagem)
-                if 'Cambio' in mensagem:
-                    print(f'Cambio: {mensagem}')
-                    # exchange_data.value = mensagem.split(": ")[1]
-                if 'Combustible' in mensagem:
-                    print(f'Combustible: {mensagem}')
-                    # gas_data.value = mensagem.split(": ")[1]
-                if 'Costo' in mensagem:
-                    print(f'Costo: {mensagem}')
-                    # cost_data.value = mensagem.split(": ")[1]
-                if 'Chat' in mensagem:
-                    # msg = mensagem.split(': ')[1]
-                    # msg_txt = ft.Text(msg, expand=True)
-                    # chat_messages.controls.append(msg_txt)
-                    # chat_messages.scroll_to(offset=-1, duration=1000)
-                    chat_ref.current.controls.append(ft.Text(mensagem))
-                    chat_ref.current.update()
-                
-                page.update()
+
+        headers = {'Authorization': f'Bearer {auth_token}'}
+
+        retry_delay = 2
+        max_delay = 30
+
+        while True:
+            try:
+                print("🔌 Tentando conectar ao WebSocket...")
+                async with websockets.connect(uri, additional_headers=headers) as websocket:
+                    print("✅ Conectado ao WebSocket!")
+
+                    retry_delay = 2
+
+                    while True:
+                        mensagem = await websocket.recv()
+                        print(mensagem)
+                        if 'Cambio' in mensagem:
+                            exchange_data.value = mensagem.split(": ")[1]
+                        if 'Combustible' in mensagem:
+                            gas_data.value = mensagem.split(": ")[1]
+                        if 'Costo' in mensagem:
+                            cost, ref_month = mensagem.split(': ')[1].split('/')
+                            cost_data.value = str(f'{cost}/{MONTHS[int(ref_month)]}')
+                        # if 'Chat' in mensagem:
+                            # msg = mensagem.split(': ')[1]
+                            # msg_txt = ft.Text(msg, expand=True)
+                            # chat_messages.controls.append(msg_txt)
+                            # chat_messages.scroll_to(offset=-1, duration=1000)
+                        chat_ref.current.controls.append(ft.Text(mensagem))
+                        chat_ref.current.update()
+                        
+                        page.update()
+            except (ConnectionClosedError, ConnectionRefusedError) as e:
+                print(f'Error: {e}. Retrying connection in 2 seconds')
+                time.sleep(2)
+                page.run_task(receber_dados)
+            # except ConnectionRefusedError as e:
+            #     print(f'Error: {e}. Retrying connection in 2 seconds')
+            #     time.sleep(2)
+            #     page.run_task(receber_dados)
+            finally:
+                print('Error')
+        
 
     # @error_handler_decorator
-    def request_gas(e):
-        headers = {
-            'Authorization': f'Bearer {page.client_storage.get('session')}'
-        }
+    async def request_gas(e):
+        headers = {'Authorization': f'Bearer {auth_token}'}
         response = requests.get('http://192.168.1.101:8000/gas-price/', headers=headers)
-        price = response.json().get('price')
-        gas_data.value = str(f'{price}')
+        gas_data.value = str(response.json().get('price'))
         page.update()
 
     # @error_handler_decorator
-    def request_exchange(e):
-        headers = {
-            'Authorization': f'Bearer {page.client_storage.get('session')}'
-        }
+    async def request_exchange(e):
+        headers = {'Authorization': f'Bearer {auth_token}'}
         response = requests.get('http://192.168.1.101:8000/exchange-values/', headers=headers)
-        print(response.json())
-        # buy = response.json().get('buy')
-        # sell = response.json().get('sell')
-        # exchange_data.value = str(f'{buy}/{sell}')
+        buy = response.json().get('buy')
+        sell = response.json().get('sell')
+        exchange_data.value = str(f'{buy}/{sell}')
         page.update()
 
     # @error_handler_decorator
-    def request_cost(e):
-        print(page.client_storage.get('session'))
-        headers = {
-            'Authorization': f'Bearer {page.client_storage.get('session')}'
-        }
+    async def request_cost(e):
+        headers = {'Authorization': f'Bearer {auth_token}'}
         response = requests.get('http://192.168.1.101:8000/soybean-cost/', headers=headers)
-        print(response.json())
         cost = response.json().get('cost')
         ref_month = response.json().get('ref_month')
-        print(ref_month)
         cost_data.value = str(f'{cost}/{MONTHS[ref_month]}')
         page.update()
 
     def enviar(e, msg):
-        URL = f'http://192.168.1.101:8000/atualizar-chat/{msg}'
+        URL = f'http://192.168.1.101:8000/message/{msg}'
         response = requests.post(url=URL)
 
     def login(e):
-        # headers = {
-        #     'Authorization': f'Bearer token123'
-        # }
+        nonlocal auth_token
         data = {
             "username": username.value,
             "password": password.value
         }
         try:
             response = requests.post('http://192.168.1.101:8000/signin', data=json.dumps(data))
-            # token = response.json().get('token', None)
-            print(f'response : -->> {response}')
-            token = response.json()
-            print(f'status code : -->> {response.status_code}')
-            print(f'token : -->> {token}')
-            if response.status_code == 401:
-                return False
+            token = response.json().get('token', None)
+            if not token:
+                raise HTTPError('Invalid token')
+            auth_token = token
+
+            page.clean()
+            page.add(view)
+            page.update()
+            page.run_task(receber_dados)
         except Exception as e:
-            print(e)
-            return False
-        page.clean()
-        page.add(view)
-        page.run_task(receber_dados)
-        page.client_storage.set(key='session', value=token)
-        page.update()
+            print(f'Login error: {e}')
 
     # Login Section
     loginView = ft.Column([
